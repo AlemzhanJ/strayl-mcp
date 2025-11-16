@@ -38,7 +38,7 @@ def get_api_key() -> str:
 async def search_logs_semantic(
     query: Annotated[str, "Search query in natural language or keywords"],
     time_period: Annotated[Optional[str], "Time filter: 5m, 1h, today, yesterday, 7d, 30d, etc."] = None,
-    match_threshold: Annotated[float, "Minimum similarity score (0.0 to 1.0)"] = 0.5,
+    match_threshold: Annotated[float, "Minimum similarity score (0.0 to 1.0)"] = 0.2,
     match_count: Annotated[int, "Maximum number of results to return"] = 50,
 ) -> str:
     """Search logs using semantic (vector) search with optional time filtering.
