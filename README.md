@@ -114,7 +114,7 @@ Semantic (AI-powered) search across indexed documentation.
 - `query` (required): Search query in natural language
 - `source_id` (optional): Specific documentation source ID to search within
 - `limit` (optional): Max results (default 5)
-- `similarity_threshold` (optional): Similarity threshold (0.0-1.0, default 0.7)
+- `use_ai` (optional): Use AI to structure the answer (default True)
 
 **Example:**
 ```

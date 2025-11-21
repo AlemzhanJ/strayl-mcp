@@ -235,7 +235,6 @@ async def search_documentation(
     query: Annotated[str, "Search query in natural language to find relevant documentation"],
     source_id: Annotated[Optional[str], "Optional source ID to search within specific documentation source"] = None,
     limit: Annotated[int, "Maximum number of results to return"] = 5,
-    similarity_threshold: Annotated[float, "Minimum similarity score (0.0 to 1.0)"] = 0.7,
     use_ai: Annotated[bool, "Use AI (Gemini) to structure the answer"] = True,
 ) -> str:
     """Search documentation using semantic (vector) search with AI-powered answer structuring."""
@@ -245,7 +244,7 @@ async def search_documentation(
         payload = {
             "query": query,
             "limit": limit,
-            "similarity_threshold": similarity_threshold,
+            "similarity_threshold": 0.22,  # Фиксированное значение для оптимального поиска
             "use_ai": use_ai,
         }
 
