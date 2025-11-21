@@ -238,14 +238,10 @@ async def search_documentation(
     similarity_threshold: Annotated[float, "Minimum similarity score (0.0 to 1.0)"] = 0.7,
     use_ai: Annotated[bool, "Use AI (Gemini) to structure the answer"] = True,
 ) -> str:
-    """Search documentation using semantic (vector) search with AI-powered answer structuring.
-
-    This tool performs AI-powered semantic search across indexed documentation,
-    finding relevant content and using Gemini 2.5 Flash to provide a structured answer."""
+    """Search documentation using semantic (vector) search with AI-powered answer structuring."""
     try:
         api_key = get_api_key()
 
-        # Prepare request payload
         payload = {
             "query": query,
             "limit": limit,
@@ -256,8 +252,8 @@ async def search_documentation(
         if source_id:
             payload["source_id"] = source_id
 
-        # Make API request
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # ✅ Увеличен timeout до 60 секунд для Gemini
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{STRAYL_API_URL}/search-documentation",
                 json=payload,
@@ -284,57 +280,42 @@ async def search_documentation(
                 source_info = f" in source '{source_id}'" if source_id else ""
                 return f"No documentation found for query '{query}'{source_info}"
 
-            # Format output
+            # Build output
             output = []
             
             # Header
             output.append("=" * 80)
             output.append(f"📚 DOCUMENTATION SEARCH: '{query}'")
             output.append("=" * 80)
-            output.append(f"Results found: {metadata.get('count', len(results))}")
-            output.append(f"Search duration: {metadata.get('duration_ms', 0)}ms")
-            output.append(f"Similarity threshold: {similarity_threshold}")
-            output.append(f"AI Requested: {use_ai}")
-            output.append(f"AI Processed: {metadata.get('ai_processed', False)}")
-            output.append(f"Structured Answer Present: {bool(structured_answer)}")
-            
-            if source_id:
-                output.append(f"Source ID: {source_id}")
+            output.append(f"Results: {len(results)} | Duration: {metadata.get('duration_ms', 0)}ms | AI: {metadata.get('ai_processed', False)}")
+            output.append("")
 
-            # ✅ КРИТИЧНО: Показываем структурированный ответ
-            if structured_answer:
-                answer_text = str(structured_answer).strip()
-                if answer_text and answer_text.lower() not in ['none', 'null', '']:
-                    output.append("\n" + "=" * 80)
-                    output.append("🤖 AI-STRUCTURED ANSWER (Gemini 2.5 Flash)")
-                    output.append("=" * 80)
-                    output.append(answer_text)
-                    output.append("")
-                else:
-                    output.append("\n⚠️ AI processing completed but no answer was generated")
-            elif use_ai and metadata.get('ai_processed'):
-                output.append("\n⚠️ AI processing was attempted but no answer was generated")
-            elif use_ai:
-                output.append("\n⚠️ AI processing was enabled but not executed")
+            # ✅ AI-STRUCTURED ANSWER (если есть)
+            if structured_answer and str(structured_answer).strip():
+                output.append("🤖 AI-STRUCTURED ANSWER (Gemini 2.5 Flash)")
+                output.append("=" * 80)
+                output.append(str(structured_answer).strip())
+                output.append("")
+                output.append("=" * 80)
+                output.append("📄 SOURCE DOCUMENTS (for reference)")
+                output.append("=" * 80)
+            else:
+                output.append("📄 SEARCH RESULTS")
+                output.append("=" * 80)
 
-            # Исходные документы
-            output.append("\n" + "=" * 80)
-            output.append("📄 SOURCE DOCUMENTS")
-            output.append("=" * 80 + "\n")
-
+            # Source documents
             for i, result in enumerate(results, 1):
-                output.append(f"{i}. {format_documentation_result(result)}")
-                if i < len(results):
-                    output.append("-" * 40)
+                output.append(f"\n{i}. {format_documentation_result(result)}")
 
             return "\n".join(output)
 
     except ValueError as e:
         return f"Configuration error: {str(e)}"
     except httpx.TimeoutException:
-        return "Error: Request timed out. Please try again."
+        return "Error: Request timed out (Gemini processing can take up to 60s). Please try again."
     except Exception as e:
-        return f"Error: {str(e)}"
+        import traceback
+        return f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
 
 
 @mcp.tool()
