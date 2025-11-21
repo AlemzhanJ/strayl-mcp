@@ -345,6 +345,211 @@ async def search_documentation(
 
 
 @mcp.tool()
+async def list_documentation_sources(
+    include_public: Annotated[bool, "Include public sources accessible to all users"] = True,
+    include_private: Annotated[bool, "Include your private sources"] = True,
+) -> str:
+    """List documentation sources available to you.
+    
+    Returns a formatted list of documentation sources with their IDs, names, URLs, 
+    and status. Shows only sources you have access to:
+    - Your private sources (if include_private=True)
+    - Public sources (if include_public=True)
+    
+    Use source_id to search within a specific documentation source."""
+    try:
+        api_key = get_api_key()
+        
+        # ✅ ИСПРАВЛЕНО: Используем Edge Function для получения списка источников
+        # Edge Function будет фильтровать источники по user_id из API ключа
+        # Это гарантирует, что пользователь видит только свои источники + публичные
+        
+        payload = {
+            "include_public": include_public,
+            "include_private": include_private,
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{STRAYL_API_URL}/list-documentation-sources",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            
+            if response.status_code != 200:
+                error_data = response.json() if response.headers.get("content-type") == "application/json" else {}
+                return f"Error: API returned status {response.status_code}: {error_data.get('error', response.text)}"
+            
+            data = response.json()
+            
+            if "error" in data:
+                return f"Error: {data.get('error', 'Unknown error')}"
+            
+            sources = data.get("sources", [])
+            count = data.get("count", 0)
+            
+            if not sources:
+                filter_info = []
+                if not include_public:
+                    filter_info.append("excluding public")
+                if not include_private:
+                    filter_info.append("excluding private")
+                filter_str = f" ({', '.join(filter_info)})" if filter_info else ""
+                return f"No documentation sources found{filter_str}."
+            
+            # Форматируем результаты
+            output = [
+                "=" * 80,
+                "📚 AVAILABLE DOCUMENTATION SOURCES",
+                "=" * 80,
+                f"Total sources: {count}",
+                f"Filters: Public={'Yes' if include_public else 'No'}, Private={'Yes' if include_private else 'No'}",
+                "",
+            ]
+            
+            for i, source in enumerate(sources, 1):
+                source_id = source.get("id", "Unknown")
+                name = source.get("name", "Unnamed")
+                url = source.get("url", "N/A")
+                status = source.get("status", "unknown")
+                chunks_count = source.get("chunks_count", 0)
+                indexed_at = source.get("indexed_at", "")
+                is_public = source.get("is_public", False)
+                
+                # Форматируем дату
+                date_str = ""
+                if indexed_at:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(indexed_at.replace('Z', '+00:00'))
+                        date_str = dt.strftime("%Y-%m-%d %H:%M")
+                    except:
+                        date_str = indexed_at[:10]
+                
+                output.append(f"{i}. {name}")
+                output.append(f"   ID: {source_id}")
+                output.append(f"   URL: {url}")
+                output.append(f"   Status: {status.upper()}")
+                output.append(f"   Public: {'Yes' if is_public else 'No (Your private source)'}")
+                if chunks_count:
+                    output.append(f"   Chunks: {chunks_count}")
+                if date_str:
+                    output.append(f"   Indexed: {date_str}")
+                output.append("")
+            
+            output.append("=" * 80)
+            output.append("\n💡 Tip: Use source_id to search within a specific documentation source")
+            output.append("   Example: search_documentation('query', source_id='uuid-here')")
+            
+            return "\n".join(output)
+            
+    except ValueError as e:
+        return f"Configuration error: {str(e)}"
+    except httpx.TimeoutException:
+        return "Error: Request timed out. Please try again."
+    except Exception as e:
+        import traceback
+        return f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+
+
+@mcp.tool()
+async def index_documentation(
+    source_id: Annotated[str, "UUID of the documentation source to index"],
+    force: Annotated[bool, "Force re-indexing even if already indexed"] = False,
+    max_pages: Annotated[int, "Maximum number of pages to crawl"] = 100,
+    max_depth: Annotated[int, "Maximum crawling depth"] = 3,
+) -> str:
+    """Index a documentation source for search.
+    
+    This tool triggers the indexing process for a documentation source.
+    It will crawl the documentation website, extract content, generate embeddings,
+    and make it searchable.
+    
+    Note: Indexing can take several minutes depending on the size of the documentation."""
+    try:
+        api_key = get_api_key()
+        
+        # Подготавливаем payload для Edge Function
+        payload = {
+            "source_id": source_id,
+            "force": force,
+            "max_pages": max_pages,
+            "max_depth": max_depth,
+        }
+        
+        # Вызываем Edge Function index-documentation
+        # Увеличиваем timeout до 300 секунд (5 минут) для индексации
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{STRAYL_API_URL}/index-documentation",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+            
+            if response.status_code != 200:
+                error_data = response.json() if response.headers.get("content-type") == "application/json" else {}
+                error_msg = error_data.get('error', response.text)
+                return f"Error: API returned status {response.status_code}: {error_msg}"
+            
+            data = response.json()
+            
+            # Проверяем на ошибки
+            if "error" in data:
+                return f"Error: {data.get('error', 'Unknown error')}"
+            
+            # Форматируем успешный результат
+            if data.get("success"):
+                source_id_returned = data.get("source_id", source_id)
+                pages_crawled = data.get("pages_crawled", 0)
+                chunks_indexed = data.get("chunks_indexed", 0)
+                total_tokens = data.get("total_tokens", 0)
+                performance = data.get("performance", {})
+                
+                output = [
+                    "=" * 80,
+                    "✅ DOCUMENTATION INDEXING COMPLETED",
+                    "=" * 80,
+                    f"Source ID: {source_id_returned}",
+                    f"Pages crawled: {pages_crawled}",
+                    f"Chunks indexed: {chunks_indexed}",
+                    f"Total tokens: {total_tokens:,}",
+                ]
+                
+                if performance:
+                    total_duration = performance.get("total_duration_ms", 0)
+                    stages = performance.get("stages", {})
+                    
+                    output.append(f"\nTotal duration: {total_duration / 1000:.2f}s")
+                    
+                    if stages:
+                        output.append("\nStage timings:")
+                        for stage, duration in stages.items():
+                            output.append(f"  - {stage}: {duration / 1000:.2f}s")
+                
+                output.append("\n" + "=" * 80)
+                output.append("💡 The documentation is now searchable!")
+                output.append(f"   Use: search_documentation('query', source_id='{source_id_returned}')")
+                
+                return "\n".join(output)
+            else:
+                return f"Error: Indexing failed. {data.get('error', 'Unknown error')}"
+            
+    except ValueError as e:
+        return f"Configuration error: {str(e)}"
+    except httpx.TimeoutException:
+        return "Error: Request timed out. Indexing can take several minutes. Please check the status later."
+    except Exception as e:
+        import traceback
+        return f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+
+
+@mcp.tool()
 def list_time_periods() -> str:
     """
     List all supported time period formats for log search.
