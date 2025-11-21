@@ -268,6 +268,15 @@ async def search_documentation(
                 return f"Error: API returned status {response.status_code}: {error_data.get('error', response.text)}"
 
             data = response.json()
+            
+            # 🐛 DEBUG DIAGNOSTICS (Added to debug JSON structure mismatch)
+            debug_info = {
+                "response_keys": list(data.keys()),
+                "structured_answer_raw": data.get("structured_answer"),
+                "structured_answer_type": str(type(data.get("structured_answer"))),
+                "metadata_raw": data.get("metadata"),
+                "ai_processed_flag": data.get("metadata", {}).get("ai_processed")
+            }
 
             if "error" in data:
                 return f"Error: {data.get('error', 'Unknown error')}"
@@ -296,10 +305,27 @@ async def search_documentation(
                 output.append("=" * 80)
                 output.append(str(structured_answer).strip())
                 output.append("")
+                
+                # 🐛 DEBUG OUTPUT (Only if AI answer exists)
+                output.append("🐛 DEBUG DIAGNOSTICS")
+                output.append("-" * 80)
+                output.append(f"Keys received: {debug_info['response_keys']}")
+                output.append(f"Structured Answer Type: {debug_info['structured_answer_type']}")
+                output.append(f"Metadata Raw: {debug_info['metadata_raw']}")
                 output.append("=" * 80)
+                
                 output.append("📄 SOURCE DOCUMENTS (for reference)")
                 output.append("=" * 80)
             else:
+                # 🐛 DEBUG OUTPUT (If no AI answer)
+                output.append("🐛 DEBUG DIAGNOSTICS (Why no AI answer?)")
+                output.append("-" * 80)
+                output.append(f"Keys received: {debug_info['response_keys']}")
+                output.append(f"Structured Answer Type: {debug_info['structured_answer_type']}")
+                output.append(f"Structured Answer Value: {str(debug_info['structured_answer_raw'])[:200]}")
+                output.append(f"Metadata Raw: {debug_info['metadata_raw']}")
+                output.append("=" * 80)
+                
                 output.append("📄 SEARCH RESULTS")
                 output.append("=" * 80)
 
