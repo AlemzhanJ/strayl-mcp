@@ -278,22 +278,22 @@ async def search_documentation(
                 source_info = f" in source '{source_id}'" if source_id else ""
                 return f"No documentation found for query '{query}'{source_info}"
 
-            # Build minimalist output
-            output = []
-            
-            # If AI answer exists, show only that (no metadata)
+            # Минималистичный вывод - только AI ответ или краткие результаты
             if structured_answer and str(structured_answer).strip():
-                output.append(str(structured_answer).strip())
-            else:
-                # Fallback: show raw results if no AI answer
-                output.append(f"# Documentation: {query}")
-                output.append("")
-                output.append(f"Found {len(results)} results")
-                output.append("")
+                # Просто AI ответ, без заголовков и метаданных
+                return str(structured_answer).strip()
+            
+            # Fallback: краткие результаты если нет AI ответа
+            output = []
+            output.append(f"📚 {len(results)} результат(ов) по запросу: {query}\n")
+            
+            for i, result in enumerate(results, 1):
+                source = result.get("source", {})
+                content = result.get("content", "")[:300]  # Первые 300 символов
+                source_name = source.get("name", "Unknown")
                 
-                for i, result in enumerate(results, 1):
-                    output.append(f"## {i}. {format_documentation_result(result)}")
-                    output.append("")
+                output.append(f"{i}. **{source_name}**")
+                output.append(f"   {content}...\n")
 
             return "\n".join(output)
 
