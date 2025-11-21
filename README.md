@@ -6,6 +6,7 @@ MCP server for semantic and exact log search powered by Strayl.
 
 - **Semantic Search**: AI-powered search across your logs using vector embeddings
 - **Exact Text Search**: Traditional text matching with case-sensitive options
+- **Documentation Search**: AI-powered semantic search across indexed documentation
 - **Time Filtering**: Search logs by time periods (5m, 1h, today, yesterday, 7d, etc.)
 - **Log Level Filtering**: Filter by log levels (info, warn, error, debug)
 - **Easy Integration**: Works with Claude Desktop, Cline, and other MCP clients
@@ -105,7 +106,22 @@ Exact text matching search across your logs.
 Search for exact text "timeout" in error logs from today
 ```
 
-### 3. list_time_periods
+### 3. search_documentation
+
+Semantic (AI-powered) search across indexed documentation.
+
+**Parameters:**
+- `query` (required): Search query in natural language
+- `source_id` (optional): Specific documentation source ID to search within
+- `limit` (optional): Max results (default 5)
+- `similarity_threshold` (optional): Similarity threshold (0.0-1.0, default 0.7)
+
+**Example:**
+```
+Search documentation for "how to authenticate users"
+```
+
+### 4. list_time_periods
 
 List all supported time period formats.
 
@@ -136,6 +152,8 @@ Simply ask Claude:
 > "Find all database connection issues from today"
 
 > "Show me exact text 'null pointer' in error logs"
+
+> "Search documentation for how to implement user authentication"
 
 ### Development/Testing
 

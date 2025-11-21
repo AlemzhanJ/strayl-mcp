@@ -5,11 +5,11 @@ from typing import Annotated, Optional
 import httpx
 from mcp.server.fastmcp import FastMCP
 
-from .utils import parse_time_period, format_log_result
+from .utils import parse_time_period, format_log_result, format_documentation_result
 
 # Initialize FastMCP server
 mcp = FastMCP(
-    "Strayl Log Search",
+    "Strayl Search",
     dependencies=[
         "httpx>=0.27.0",
         "python-dateutil>=2.8.0",
@@ -219,6 +219,84 @@ async def search_logs_exact(
 
             if total > 10:
                 output.append(f"\n... and {total - 10} more results")
+
+            return "\n".join(output)
+
+    except ValueError as e:
+        return f"Configuration error: {str(e)}"
+    except httpx.TimeoutException:
+        return "Error: Request timed out. Please try again."
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+@mcp.tool()
+async def search_documentation(
+    query: Annotated[str, "Search query in natural language to find relevant documentation"],
+    source_id: Annotated[Optional[str], "Optional source ID to search within specific documentation source"] = None,
+    limit: Annotated[int, "Maximum number of results to return"] = 5,
+    similarity_threshold: Annotated[float, "Minimum similarity score (0.0 to 1.0)"] = 0.7,
+) -> str:
+    """Search documentation using semantic (vector) search.
+
+    This tool performs AI-powered semantic search across indexed documentation,
+    finding relevant content even if it doesn't contain exact keywords."""
+    try:
+        api_key = get_api_key()
+
+        # Prepare request payload
+        payload = {
+            "query": query,
+            "limit": limit,
+            "similarity_threshold": similarity_threshold,
+        }
+
+        if source_id:
+            payload["source_id"] = source_id
+
+        # Make API request
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{STRAYL_API_URL}/search-documentation",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+
+            if response.status_code != 200:
+                error_data = response.json() if response.headers.get("content-type") == "application/json" else {}
+                return f"Error: API returned status {response.status_code}: {error_data.get('error', response.text)}"
+
+            data = response.json()
+
+            if "error" in data:
+                return f"Error: {data.get('error', 'Unknown error')}"
+
+            results = data.get("results", [])
+            metadata = data.get("metadata", {})
+
+            if not results:
+                source_info = f" in source '{source_id}'" if source_id else ""
+                return f"No documentation found for query '{query}'{source_info}"
+
+            # Format results
+            output = [
+                f"Documentation Search Results for: '{query}'",
+                f"Total results: {metadata.get('count', len(results))}",
+                f"Similarity threshold: {similarity_threshold}",
+                f"Search duration: {metadata.get('duration_ms', 0)}ms",
+            ]
+
+            if source_id:
+                output.append(f"Source ID: {source_id}")
+
+            output.append("\n" + "=" * 80 + "\n")
+
+            for i, result in enumerate(results, 1):
+                output.append(f"{i}. {format_documentation_result(result)}")
+                output.append("-" * 80)
 
             return "\n".join(output)
 

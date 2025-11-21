@@ -79,3 +79,26 @@ def format_log_result(log: dict) -> str:
         result += f"\nSimilarity: {log['similarity']:.4f}"
 
     return result
+
+
+def format_documentation_result(result: dict) -> str:
+    """Format a documentation search result for display."""
+    content = result.get("content", "")
+    similarity = result.get("similarity", 0.0)
+    source = result.get("source", {})
+    metadata = result.get("metadata", {})
+    
+    source_name = source.get("name", "Unknown")
+    source_url = source.get("url", "")
+    
+    output = f"Source: {source_name}"
+    if source_url:
+        output += f" ({source_url})"
+    output += f"\nSimilarity: {similarity:.4f}"
+    
+    if metadata:
+        output += f"\nMetadata: {metadata}"
+    
+    output += f"\n\nContent:\n{content}"
+    
+    return output
