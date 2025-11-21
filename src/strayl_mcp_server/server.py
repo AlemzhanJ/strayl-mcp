@@ -457,16 +457,23 @@ async def list_documentation_sources(
 
 @mcp.tool()
 async def index_documentation(
-    source_id: Annotated[str, "UUID of the documentation source to index"],
+    url: Annotated[str, "URL of the documentation to index (e.g., https://docs.example.com)"],
+    is_public: Annotated[bool, "Whether this documentation should be public (visible to all users who add it)"] = True,
     force: Annotated[bool, "Force re-indexing even if already indexed"] = False,
     max_pages: Annotated[int, "Maximum number of pages to crawl"] = 100,
     max_depth: Annotated[int, "Maximum crawling depth"] = 3,
 ) -> str:
-    """Index a documentation source for search.
+    """Add and index documentation from a URL.
     
-    This tool triggers the indexing process for a documentation source.
-    It will crawl the documentation website, extract content, generate embeddings,
-    and make it searchable.
+    This tool will:
+    1. Check if the documentation already exists (for public docs)
+    2. Add it to your documentation list
+    3. Crawl the website and extract content
+    4. Generate embeddings for semantic search
+    5. Make it searchable via search_documentation
+    
+    If the documentation is public and already indexed by another user, it will be added
+    to your list without re-indexing (unless you use force=True).
     
     Note: Indexing can take several minutes depending on the size of the documentation."""
     try:
@@ -474,7 +481,8 @@ async def index_documentation(
         
         # Подготавливаем payload для Edge Function
         payload = {
-            "source_id": source_id,
+            "url": url,
+            "is_public": is_public,
             "force": force,
             "max_pages": max_pages,
             "max_depth": max_depth,
@@ -505,7 +513,7 @@ async def index_documentation(
             
             # Форматируем успешный результат
             if data.get("success"):
-                source_id_returned = data.get("source_id", source_id)
+                source_id_returned = data.get("source_id", "")
                 pages_crawled = data.get("pages_crawled", 0)
                 chunks_indexed = data.get("chunks_indexed", 0)
                 total_tokens = data.get("total_tokens", 0)
@@ -513,9 +521,11 @@ async def index_documentation(
                 
                 output = [
                     "=" * 80,
-                    "✅ DOCUMENTATION INDEXING COMPLETED",
+                    "✅ DOCUMENTATION ADDED & INDEXED",
                     "=" * 80,
+                    f"URL: {url}",
                     f"Source ID: {source_id_returned}",
+                    f"Public: {'Yes' if is_public else 'No (Private)'}",
                     f"Pages crawled: {pages_crawled}",
                     f"Chunks indexed: {chunks_indexed}",
                     f"Total tokens: {total_tokens:,}",
@@ -534,7 +544,8 @@ async def index_documentation(
                 
                 output.append("\n" + "=" * 80)
                 output.append("💡 The documentation is now searchable!")
-                output.append(f"   Use: search_documentation('query', source_id='{source_id_returned}')")
+                output.append(f"   Use: search_documentation('your query here')")
+                output.append(f"   Or: search_documentation('your query', source_id='{source_id_returned}')")
                 
                 return "\n".join(output)
             else:
