@@ -275,7 +275,11 @@ async def search_documentation(
                 return f"Error: {data.get('error', 'Unknown error')}"
 
             results = data.get("results", [])
+            structured_answer = data.get("structured_answer")
             metadata = data.get("metadata", {})
+            
+            # Проверяем наличие структурированного ответа
+            has_structured = structured_answer is not None and str(structured_answer).strip()
 
             if not results:
                 source_info = f" in source '{source_id}'" if source_id else ""
@@ -292,8 +296,23 @@ async def search_documentation(
             if source_id:
                 output.append(f"Source ID: {source_id}")
 
-            output.append("\n" + "=" * 80 + "\n")
+            # Если есть структурированный ответ от AI, показываем его первым
+            if has_structured:
+                output.append(f"AI Processed: {metadata.get('ai_processed', False)}")
+                output.append("\n" + "=" * 80)
+                output.append("📝 STRUCTURED ANSWER (by Gemini 2.5 Flash):")
+                output.append("=" * 80)
+                output.append(str(structured_answer))
+                output.append("\n" + "=" * 80)
+                output.append("📚 SOURCE DOCUMENTS:")
+                output.append("=" * 80 + "\n")
+            elif metadata.get('ai_processed'):
+                output.append("ℹ️ AI processing was attempted but no structured answer was generated")
+                output.append("\n" + "=" * 80 + "\n")
+            else:
+                output.append("\n" + "=" * 80 + "\n")
 
+            # Показываем исходные результаты
             for i, result in enumerate(results, 1):
                 output.append(f"{i}. {format_documentation_result(result)}")
                 output.append("-" * 80)
