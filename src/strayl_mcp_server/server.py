@@ -244,14 +244,13 @@ async def search_documentation(
         payload = {
             "query": query,
             "limit": limit,
-            "similarity_threshold": 0.22,  # Фиксированное значение для оптимального поиска
+            "similarity_threshold": 0.22,
             "use_ai": use_ai,
         }
 
         if source_id:
             payload["source_id"] = source_id
 
-        # ✅ Увеличен timeout до 60 секунд для Gemini
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{STRAYL_API_URL}/search-documentation",
@@ -267,15 +266,6 @@ async def search_documentation(
                 return f"Error: API returned status {response.status_code}: {error_data.get('error', response.text)}"
 
             data = response.json()
-            
-            # 🐛 DEBUG DIAGNOSTICS (Added to debug JSON structure mismatch)
-            debug_info = {
-                "response_keys": list(data.keys()),
-                "structured_answer_raw": data.get("structured_answer"),
-                "structured_answer_type": str(type(data.get("structured_answer"))),
-                "metadata_raw": data.get("metadata"),
-                "ai_processed_flag": data.get("metadata", {}).get("ai_processed")
-            }
 
             if "error" in data:
                 return f"Error: {data.get('error', 'Unknown error')}"
@@ -284,53 +274,26 @@ async def search_documentation(
             structured_answer = data.get("structured_answer")
             metadata = data.get("metadata", {})
 
-            if not results:
+            if not results and not structured_answer:
                 source_info = f" in source '{source_id}'" if source_id else ""
                 return f"No documentation found for query '{query}'{source_info}"
 
-            # Build output
+            # Build minimalist output
             output = []
             
-            # Header
-            output.append("=" * 80)
-            output.append(f"📚 DOCUMENTATION SEARCH: '{query}'")
-            output.append("=" * 80)
-            output.append(f"Results: {len(results)} | Duration: {metadata.get('duration_ms', 0)}ms | AI: {metadata.get('ai_processed', False)}")
-            output.append("")
-
-            # ✅ AI-STRUCTURED ANSWER (если есть)
+            # If AI answer exists, show only that (no metadata)
             if structured_answer and str(structured_answer).strip():
-                output.append("🤖 AI-STRUCTURED ANSWER (Gemini 2.5 Flash)")
-                output.append("=" * 80)
                 output.append(str(structured_answer).strip())
+            else:
+                # Fallback: show raw results if no AI answer
+                output.append(f"# Documentation: {query}")
+                output.append("")
+                output.append(f"Found {len(results)} results")
                 output.append("")
                 
-                # 🐛 DEBUG OUTPUT (Only if AI answer exists)
-                output.append("🐛 DEBUG DIAGNOSTICS")
-                output.append("-" * 80)
-                output.append(f"Keys received: {debug_info['response_keys']}")
-                output.append(f"Structured Answer Type: {debug_info['structured_answer_type']}")
-                output.append(f"Metadata Raw: {debug_info['metadata_raw']}")
-                output.append("=" * 80)
-                
-                output.append("📄 SOURCE DOCUMENTS (for reference)")
-                output.append("=" * 80)
-            else:
-                # 🐛 DEBUG OUTPUT (If no AI answer)
-                output.append("🐛 DEBUG DIAGNOSTICS (Why no AI answer?)")
-                output.append("-" * 80)
-                output.append(f"Keys received: {debug_info['response_keys']}")
-                output.append(f"Structured Answer Type: {debug_info['structured_answer_type']}")
-                output.append(f"Structured Answer Value: {str(debug_info['structured_answer_raw'])[:200]}")
-                output.append(f"Metadata Raw: {debug_info['metadata_raw']}")
-                output.append("=" * 80)
-                
-                output.append("📄 SEARCH RESULTS")
-                output.append("=" * 80)
-
-            # Source documents
-            for i, result in enumerate(results, 1):
-                output.append(f"\n{i}. {format_documentation_result(result)}")
+                for i, result in enumerate(results, 1):
+                    output.append(f"## {i}. {format_documentation_result(result)}")
+                    output.append("")
 
             return "\n".join(output)
 
@@ -358,10 +321,6 @@ async def list_documentation_sources(
     Use source_id to search within a specific documentation source."""
     try:
         api_key = get_api_key()
-        
-        # ✅ ИСПРАВЛЕНО: Используем Edge Function для получения списка источников
-        # Edge Function будет фильтровать источники по user_id из API ключа
-        # Это гарантирует, что пользователь видит только свои источники + публичные
         
         payload = {
             "include_public": include_public,
@@ -399,10 +358,9 @@ async def list_documentation_sources(
                 filter_str = f" ({', '.join(filter_info)})" if filter_info else ""
                 return f"No documentation sources found{filter_str}."
             
-            # Форматируем результаты
             output = [
                 "=" * 80,
-                "📚 AVAILABLE DOCUMENTATION SOURCES",
+                "AVAILABLE DOCUMENTATION SOURCES",
                 "=" * 80,
                 f"Total sources: {count}",
                 f"Filters: Public={'Yes' if include_public else 'No'}, Private={'Yes' if include_private else 'No'}",
@@ -418,7 +376,6 @@ async def list_documentation_sources(
                 indexed_at = source.get("indexed_at", "")
                 is_public = source.get("is_public", False)
                 
-                # Форматируем дату
                 date_str = ""
                 if indexed_at:
                     try:
@@ -440,7 +397,7 @@ async def list_documentation_sources(
                 output.append("")
             
             output.append("=" * 80)
-            output.append("\n💡 Tip: Use source_id to search within a specific documentation source")
+            output.append("\nTip: Use source_id to search within a specific documentation source")
             output.append("   Example: search_documentation('query', source_id='uuid-here')")
             
             return "\n".join(output)
@@ -478,7 +435,6 @@ async def index_documentation(
     try:
         api_key = get_api_key()
         
-        # Подготавливаем payload для Edge Function
         payload = {
             "url": url,
             "is_public": is_public,
@@ -487,8 +443,6 @@ async def index_documentation(
             "max_depth": max_depth,
         }
         
-        # Вызываем Edge Function index-documentation
-        # Увеличиваем timeout до 300 секунд (5 минут) для индексации
         async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
                 f"{STRAYL_API_URL}/index-documentation",
@@ -506,11 +460,9 @@ async def index_documentation(
             
             data = response.json()
             
-            # Проверяем на ошибки
             if "error" in data:
                 return f"Error: {data.get('error', 'Unknown error')}"
             
-            # Форматируем успешный результат
             if data.get("success"):
                 source_id_returned = data.get("source_id", "")
                 pages_crawled = data.get("pages_crawled", 0)
@@ -520,7 +472,7 @@ async def index_documentation(
                 
                 output = [
                     "=" * 80,
-                    "✅ DOCUMENTATION ADDED & INDEXED",
+                    "DOCUMENTATION ADDED & INDEXED",
                     "=" * 80,
                     f"URL: {url}",
                     f"Source ID: {source_id_returned}",
@@ -542,7 +494,7 @@ async def index_documentation(
                             output.append(f"  - {stage}: {duration / 1000:.2f}s")
                 
                 output.append("\n" + "=" * 80)
-                output.append("💡 The documentation is now searchable!")
+                output.append("The documentation is now searchable!")
                 output.append(f"   Use: search_documentation('your query here')")
                 output.append(f"   Or: search_documentation('your query', source_id='{source_id_returned}')")
                 
