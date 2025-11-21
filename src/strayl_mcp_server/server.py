@@ -294,7 +294,9 @@ async def search_documentation(
             output.append(f"Results found: {metadata.get('count', len(results))}")
             output.append(f"Search duration: {metadata.get('duration_ms', 0)}ms")
             output.append(f"Similarity threshold: {similarity_threshold}")
-            output.append(f"AI Processing: {metadata.get('ai_processed', False)}")
+            output.append(f"AI Requested: {use_ai}")
+            output.append(f"AI Processed: {metadata.get('ai_processed', False)}")
+            output.append(f"Structured Answer Present: {bool(structured_answer)}")
             
             if source_id:
                 output.append(f"Source ID: {source_id}")
