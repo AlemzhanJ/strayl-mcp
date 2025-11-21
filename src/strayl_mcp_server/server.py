@@ -236,11 +236,12 @@ async def search_documentation(
     source_id: Annotated[Optional[str], "Optional source ID to search within specific documentation source"] = None,
     limit: Annotated[int, "Maximum number of results to return"] = 5,
     similarity_threshold: Annotated[float, "Minimum similarity score (0.0 to 1.0)"] = 0.7,
+    use_ai: Annotated[bool, "Use AI (Gemini) to structure the answer"] = True,
 ) -> str:
-    """Search documentation using semantic (vector) search.
+    """Search documentation using semantic (vector) search with AI-powered answer structuring.
 
     This tool performs AI-powered semantic search across indexed documentation,
-    finding relevant content even if it doesn't contain exact keywords."""
+    finding relevant content and using Gemini 2.5 Flash to provide a structured answer."""
     try:
         api_key = get_api_key()
 
@@ -249,6 +250,7 @@ async def search_documentation(
             "query": query,
             "limit": limit,
             "similarity_threshold": similarity_threshold,
+            "use_ai": use_ai,
         }
 
         if source_id:
@@ -277,45 +279,51 @@ async def search_documentation(
             results = data.get("results", [])
             structured_answer = data.get("structured_answer")
             metadata = data.get("metadata", {})
-            
-            # Проверяем наличие структурированного ответа
-            has_structured = structured_answer is not None and str(structured_answer).strip()
 
             if not results:
                 source_info = f" in source '{source_id}'" if source_id else ""
                 return f"No documentation found for query '{query}'{source_info}"
 
-            # Format results
-            output = [
-                f"Documentation Search Results for: '{query}'",
-                f"Total results: {metadata.get('count', len(results))}",
-                f"Similarity threshold: {similarity_threshold}",
-                f"Search duration: {metadata.get('duration_ms', 0)}ms",
-            ]
-
+            # Format output
+            output = []
+            
+            # Header
+            output.append("=" * 80)
+            output.append(f"📚 DOCUMENTATION SEARCH: '{query}'")
+            output.append("=" * 80)
+            output.append(f"Results found: {metadata.get('count', len(results))}")
+            output.append(f"Search duration: {metadata.get('duration_ms', 0)}ms")
+            output.append(f"Similarity threshold: {similarity_threshold}")
+            output.append(f"AI Processing: {metadata.get('ai_processed', False)}")
+            
             if source_id:
                 output.append(f"Source ID: {source_id}")
 
-            # Если есть структурированный ответ от AI, показываем его первым
-            if has_structured:
-                output.append(f"AI Processed: {metadata.get('ai_processed', False)}")
-                output.append("\n" + "=" * 80)
-                output.append("📝 STRUCTURED ANSWER (by Gemini 2.5 Flash):")
-                output.append("=" * 80)
-                output.append(str(structured_answer))
-                output.append("\n" + "=" * 80)
-                output.append("📚 SOURCE DOCUMENTS:")
-                output.append("=" * 80 + "\n")
-            elif metadata.get('ai_processed'):
-                output.append("ℹ️ AI processing was attempted but no structured answer was generated")
-                output.append("\n" + "=" * 80 + "\n")
-            else:
-                output.append("\n" + "=" * 80 + "\n")
+            # ✅ КРИТИЧНО: Показываем структурированный ответ
+            if structured_answer:
+                answer_text = str(structured_answer).strip()
+                if answer_text and answer_text.lower() not in ['none', 'null', '']:
+                    output.append("\n" + "=" * 80)
+                    output.append("🤖 AI-STRUCTURED ANSWER (Gemini 2.5 Flash)")
+                    output.append("=" * 80)
+                    output.append(answer_text)
+                    output.append("")
+                else:
+                    output.append("\n⚠️ AI processing completed but no answer was generated")
+            elif use_ai and metadata.get('ai_processed'):
+                output.append("\n⚠️ AI processing was attempted but no answer was generated")
+            elif use_ai:
+                output.append("\n⚠️ AI processing was enabled but not executed")
 
-            # Показываем исходные результаты
+            # Исходные документы
+            output.append("\n" + "=" * 80)
+            output.append("📄 SOURCE DOCUMENTS")
+            output.append("=" * 80 + "\n")
+
             for i, result in enumerate(results, 1):
                 output.append(f"{i}. {format_documentation_result(result)}")
-                output.append("-" * 80)
+                if i < len(results):
+                    output.append("-" * 40)
 
             return "\n".join(output)
 
