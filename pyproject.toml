@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "strayl-mcp-server"
-version = "0.3.0"
+version = "0.3.1"
 description = "MCP server for Strayl log search with semantic and exact search capabilities"
 readme = "README.md"
 requires-python = ">=3.10"
