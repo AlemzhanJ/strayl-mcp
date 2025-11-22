@@ -233,21 +233,27 @@ async def search_logs_exact(
 @mcp.tool()
 async def search_documentation(
     query: Annotated[str, "Search query in natural language to find relevant documentation"],
+    chat_id: Annotated[Optional[str], "Optional chat ID to save conversation history"] = None,
     source_id: Annotated[Optional[str], "Optional source ID to search within specific documentation source"] = None,
-    limit: Annotated[int, "Maximum number of results to return"] = 5,
     use_ai: Annotated[bool, "Use AI (Gemini) to structure the answer"] = True,
 ) -> str:
-    """Search documentation using semantic (vector) search with AI-powered answer structuring."""
+    """Search documentation using semantic (vector) search with AI-powered answer structuring.
+    
+    If chat_id is provided, the query and response will be saved to the chat history.
+    Use manage_documentation_chats to create and manage chat sessions."""
     try:
         api_key = get_api_key()
 
         payload = {
             "query": query,
-            "limit": limit,
+            "limit": 15,  # Фиксированный лимит (не передается пользователем)
             "similarity_threshold": 0.22,
             "use_ai": use_ai,
         }
 
+        if chat_id:
+            payload["chat_id"] = chat_id
+            
         if source_id:
             payload["source_id"] = source_id
 
@@ -416,8 +422,6 @@ async def index_documentation(
     url: Annotated[str, "URL of the documentation to index (e.g., https://docs.example.com)"],
     is_public: Annotated[bool, "Whether this documentation should be public (visible to all users who add it)"] = True,
     force: Annotated[bool, "Force re-indexing even if already indexed"] = False,
-    max_pages: Annotated[int, "Maximum number of pages to crawl"] = 100,
-    max_depth: Annotated[int, "Maximum crawling depth"] = 3,
 ) -> str:
     """Add and index documentation from a URL.
     
@@ -431,7 +435,8 @@ async def index_documentation(
     If the documentation is public and already indexed by another user, it will be added
     to your list without re-indexing (unless you use force=True).
     
-    Note: Indexing can take several minutes depending on the size of the documentation."""
+    Note: Indexing can take several minutes depending on the size of the documentation.
+    Backend will use default values: max_pages=50000, max_depth=10."""
     try:
         api_key = get_api_key()
         
@@ -439,8 +444,6 @@ async def index_documentation(
             "url": url,
             "is_public": is_public,
             "force": force,
-            "max_pages": max_pages,
-            "max_depth": max_depth,
         }
         
         async with httpx.AsyncClient(timeout=300.0) as client:
@@ -506,6 +509,187 @@ async def index_documentation(
         return f"Configuration error: {str(e)}"
     except httpx.TimeoutException:
         return "Error: Request timed out. Indexing can take several minutes. Please check the status later."
+    except Exception as e:
+        import traceback
+        return f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+
+
+@mcp.tool()
+async def manage_documentation_chats(
+    action: Annotated[str, "Action to perform: 'list', 'create', 'get', or 'delete'"],
+    title: Annotated[Optional[str], "Chat title (required for 'create')"] = None,
+    chat_id: Annotated[Optional[str], "Chat ID (required for 'get' and 'delete')"] = None,
+    source_id: Annotated[Optional[str], "Optional source ID to associate with chat (for 'create')"] = None,
+) -> str:
+    """Manage documentation chat sessions.
+    
+    Actions:
+    - 'list': Get all your chats
+    - 'create': Create a new chat session (requires title)
+    - 'get': Get chat history (requires chat_id)
+    - 'delete': Delete a chat (requires chat_id)
+    
+    Use chat_id with search_documentation to save conversation history."""
+    try:
+        api_key = get_api_key()
+        
+        # Валидация параметров
+        if action == 'create' and not title:
+            return "Error: 'title' is required for creating a chat"
+        
+        if action in ['get', 'delete'] and not chat_id:
+            return f"Error: 'chat_id' is required for action '{action}'"
+        
+        # Формируем URL с параметрами
+        url = f"{STRAYL_API_URL}/manage-documentation-chats?action={action}"
+        
+        if action == 'get' or action == 'delete':
+            url += f"&chat_id={chat_id}"
+        
+        # Подготавливаем body для POST запроса (для create)
+        body = None
+        if action == 'create':
+            body = {"title": title}
+            if source_id:
+                body["source_id"] = source_id
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if body:
+                response = await client.post(
+                    url,
+                    json=body,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            else:
+                # Для list, get, delete используем GET (можно POST с пустым body)
+                response = await client.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+            
+            if response.status_code != 200:
+                error_data = response.json() if response.headers.get("content-type") == "application/json" else {}
+                return f"Error: API returned status {response.status_code}: {error_data.get('error', response.text)}"
+            
+            data = response.json()
+            
+            if "error" in data:
+                return f"Error: {data.get('error', 'Unknown error')}"
+            
+            # Форматируем ответ в зависимости от действия
+            if action == 'list':
+                chats = data.get("chats", [])
+                count = data.get("count", 0)
+                
+                if not chats:
+                    return "No chats found. Create a new chat with action='create'."
+                
+                output = [
+                    "=" * 80,
+                    "YOUR DOCUMENTATION CHATS",
+                    "=" * 80,
+                    f"Total chats: {count}",
+                    "",
+                ]
+                
+                for i, chat in enumerate(chats, 1):
+                    chat_id_val = chat.get("id", "Unknown")
+                    title_val = chat.get("title", "Untitled")
+                    updated = chat.get("updated_at", "")
+                    source = chat.get("documentation_sources")
+                    
+                    date_str = ""
+                    if updated:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(updated.replace('Z', '+00:00'))
+                            date_str = dt.strftime("%Y-%m-%d %H:%M")
+                        except:
+                            date_str = updated[:16]
+                    
+                    output.append(f"{i}. {title_val}")
+                    output.append(f"   ID: {chat_id_val}")
+                    if source:
+                        output.append(f"   Source: {source.get('name', 'N/A')}")
+                    if date_str:
+                        output.append(f"   Updated: {date_str}")
+                    output.append("")
+                
+                output.append("=" * 80)
+                output.append("\nTip: Use chat_id with search_documentation to continue conversation")
+                output.append("   Example: search_documentation('query', chat_id='uuid-here')")
+                
+                return "\n".join(output)
+            
+            elif action == 'create':
+                chat = data.get("chat", {})
+                chat_id_val = chat.get("id", "Unknown")
+                title_val = chat.get("title", "Untitled")
+                
+                return f"""✅ Chat created successfully!
+
+Title: {title_val}
+Chat ID: {chat_id_val}
+
+Use this chat_id with search_documentation to save conversation history:
+  search_documentation('your query', chat_id='{chat_id_val}')
+"""
+            
+            elif action == 'get':
+                chat = data.get("chat", {})
+                messages = data.get("messages", [])
+                count = data.get("count", 0)
+                
+                title_val = chat.get("title", "Untitled")
+                
+                output = [
+                    "=" * 80,
+                    f"CHAT: {title_val}",
+                    "=" * 80,
+                    f"Messages: {count}",
+                    "",
+                ]
+                
+                if not messages:
+                    output.append("No messages in this chat yet.")
+                else:
+                    for i, msg in enumerate(messages, 1):
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")
+                        created = msg.get("created_at", "")
+                        
+                        date_str = ""
+                        if created:
+                            try:
+                                from datetime import datetime
+                                dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                                date_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                            except:
+                                date_str = created[:19]
+                        
+                        role_emoji = "👤" if role == "user" else "🤖"
+                        output.append(f"{role_emoji} {role.upper()} [{date_str}]")
+                        output.append(f"{content}")
+                        output.append("-" * 80)
+                
+                return "\n".join(output)
+            
+            elif action == 'delete':
+                return f"✅ Chat deleted successfully (ID: {chat_id})"
+            
+            else:
+                return f"Unknown action: {action}"
+                
+    except ValueError as e:
+        return f"Configuration error: {str(e)}"
+    except httpx.TimeoutException:
+        return "Error: Request timed out. Please try again."
     except Exception as e:
         import traceback
         return f"Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
