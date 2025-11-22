@@ -231,16 +231,26 @@ async def search_logs_exact(
 
 
 @mcp.tool()
-async def search_documentation(
-    query: Annotated[str, "Search query in natural language to find relevant documentation"],
-    chat_id: Annotated[Optional[str], "Optional chat ID to save conversation history"] = None,
-    source_id: Annotated[Optional[str], "Optional source ID to search within specific documentation source"] = None,
-    use_ai: Annotated[bool, "Use AI (Gemini) to structure the answer"] = True,
+async def search_context(
+    query: Annotated[str, "Search query in natural language to find relevant information across indexed context sources"],
+    memory_id: Annotated[Optional[str], "Optional memory session ID to maintain conversation history and context"] = None,
+    source_id: Annotated[Optional[str], "Optional UUID to limit search to a specific context source"] = None,
+    use_ai: Annotated[bool, "Enable AI-powered answer structuring using Gemini 2.5 Flash (recommended)"] = True,
 ) -> str:
-    """Search documentation using semantic (vector) search with AI-powered answer structuring.
+    """Search across indexed context sources using semantic vector search with AI-powered answer generation.
     
-    If chat_id is provided, the query and response will be saved to the chat history.
-    Use manage_documentation_chats to create and manage chat sessions."""
+    This tool performs intelligent semantic search across your indexed content (documentation, knowledge bases, etc.)
+    and structures comprehensive answers using AI. The search uses OpenAI text-embedding-3-large (2000D) for 
+    high-quality semantic matching and Gemini 2.5 Flash for answer structuring.
+    
+    Key Features:
+    - Semantic search with automatic Cyrillic→English translation
+    - AI-structured answers with code examples and step-by-step explanations  
+    - Conversation history support via memory_id (maintains context across queries)
+    - Source-specific search with source_id filter
+    - Adaptive similarity threshold (auto-adjusts if too few results)
+    
+    Use manage_context_memory() to create and manage memory sessions for maintaining conversation context."""
     try:
         api_key = get_api_key()
 
@@ -251,8 +261,8 @@ async def search_documentation(
             "use_ai": use_ai,
         }
 
-        if chat_id:
-            payload["chat_id"] = chat_id
+        if memory_id:
+            payload["chat_id"] = memory_id
             
         if source_id:
             payload["source_id"] = source_id
@@ -313,18 +323,24 @@ async def search_documentation(
 
 
 @mcp.tool()
-async def list_documentation_sources(
-    include_public: Annotated[bool, "Include public sources accessible to all users"] = True,
-    include_private: Annotated[bool, "Include your private sources"] = True,
+async def list_context_sources(
+    include_public: Annotated[bool, "Include community-shared public context sources available to all users"] = True,
+    include_private: Annotated[bool, "Include your private context sources (only visible to you)"] = True,
 ) -> str:
-    """List documentation sources available to you.
+    """List all context sources (documentation, knowledge bases, etc.) available to you.
     
-    Returns a formatted list of documentation sources with their IDs, names, URLs, 
-    and status. Shows only sources you have access to:
-    - Your private sources (if include_private=True)
-    - Public sources (if include_public=True)
+    Returns a comprehensive list of indexed context sources with detailed metadata including:
+    - Source ID (UUID) - use this for source-specific searches
+    - Name and original URL
+    - Indexing status (ready, indexing, failed)
+    - Visibility (public/private)
+    - Statistics: number of indexed chunks, last indexed timestamp
     
-    Use source_id to search within a specific documentation source."""
+    Access control:
+    - Private sources: Only you can see and search (created by you)
+    - Public sources: Shared across all users (indexed once, accessible to all)
+    
+    Use source_id parameter in search_context() to limit searches to specific sources."""
     try:
         api_key = get_api_key()
         
@@ -403,8 +419,8 @@ async def list_documentation_sources(
                 output.append("")
             
             output.append("=" * 80)
-            output.append("\nTip: Use source_id to search within a specific documentation source")
-            output.append("   Example: search_documentation('query', source_id='uuid-here')")
+            output.append("\nTip: Use source_id to search within a specific context source")
+            output.append("   Example: search_context('query', source_id='uuid-here')")
             
             return "\n".join(output)
             
@@ -418,25 +434,35 @@ async def list_documentation_sources(
 
 
 @mcp.tool()
-async def index_documentation(
-    url: Annotated[str, "URL of the documentation to index (e.g., https://docs.example.com)"],
-    is_public: Annotated[bool, "Whether this documentation should be public (visible to all users who add it)"] = True,
-    force: Annotated[bool, "Force re-indexing even if already indexed"] = False,
+async def index_context(
+    url: Annotated[str, "Full URL of the content to index (e.g., https://docs.example.com or https://example.com/knowledge-base)"],
+    is_public: Annotated[bool, "Make this source public (accessible to all users) or private (only you)"] = True,
+    force: Annotated[bool, "Force complete re-indexing even if this URL was already indexed"] = False,
 ) -> str:
-    """Add and index documentation from a URL.
+    """Index a new context source (documentation, knowledge base, guides, etc.) from any URL.
     
-    This tool will:
-    1. Check if the documentation already exists (for public docs)
-    2. Add it to your documentation list
-    3. Crawl the website and extract content
-    4. Generate embeddings for semantic search
-    5. Make it searchable via search_documentation
+    This tool performs comprehensive content indexing with the following pipeline:
     
-    If the documentation is public and already indexed by another user, it will be added
-    to your list without re-indexing (unless you use force=True).
+    1. **URL Validation & Deduplication**: Checks if URL is already indexed (for public sources)
+    2. **Intelligent Crawling**: 
+       - Attempts sitemap.xml first for faster discovery
+       - Falls back to recursive HTML crawling (max 50,000 pages, depth 10)
+       - Respects sub-path scoping (e.g., /docs only crawls /docs/*)
+       - Uses Jina AI Reader API for clean content extraction
+    3. **Content Processing**:
+       - Smart chunking (1800 chars with 200 char overlap)
+       - Code-block protection (preserves code examples intact)
+       - Markdown structure preservation (H1-H3 headings)
+    4. **Embedding Generation**: OpenAI text-embedding-3-large (2000D) for high-quality semantic search
+    5. **Database Storage**: Indexed chunks stored in Supabase with HNSW vector index
     
-    Note: Indexing can take several minutes depending on the size of the documentation.
-    Backend will use default values: max_pages=50000, max_depth=10."""
+    Public vs Private sources:
+    - Public: Indexed once, instantly available to all users (recommended for community docs)
+    - Private: Only you can access (for proprietary documentation)
+    
+    Performance: Indexing duration depends on content size (typically 1-5 minutes for standard docs).
+    
+    After indexing, use search_context() to query the indexed content."""
     try:
         api_key = get_api_key()
         
@@ -475,7 +501,7 @@ async def index_documentation(
                 
                 output = [
                     "=" * 80,
-                    "DOCUMENTATION ADDED & INDEXED",
+                    "CONTEXT SOURCE ADDED & INDEXED",
                     "=" * 80,
                     f"URL: {url}",
                     f"Source ID: {source_id_returned}",
@@ -515,36 +541,44 @@ async def index_documentation(
 
 
 @mcp.tool()
-async def manage_documentation_chats(
-    action: Annotated[str, "Action to perform: 'list', 'create', 'get', or 'delete'"],
-    title: Annotated[Optional[str], "Chat title (required for 'create')"] = None,
-    chat_id: Annotated[Optional[str], "Chat ID (required for 'get' and 'delete')"] = None,
-    source_id: Annotated[Optional[str], "Optional source ID to associate with chat (for 'create')"] = None,
+async def manage_context_memory(
+    action: Annotated[str, "Action to perform: 'list' (show all), 'create' (new memory), 'get' (view history), 'delete' (remove memory)"],
+    title: Annotated[Optional[str], "Memory session title - descriptive name for the conversation thread (required for 'create')"] = None,
+    memory_id: Annotated[Optional[str], "Unique memory session UUID (required for 'get' and 'delete' actions)"] = None,
+    source_id: Annotated[Optional[str], "Optional context source UUID to associate memory with specific source (for 'create')"] = None,
 ) -> str:
-    """Manage documentation chat sessions.
+    """Manage context memory sessions for maintaining conversation history and context across multiple searches.
     
-    Actions:
-    - 'list': Get all your chats
-    - 'create': Create a new chat session (requires title)
-    - 'get': Get chat history (requires chat_id)
-    - 'delete': Delete a chat (requires chat_id)
+    Memory sessions allow you to build context-aware conversations where each query benefits from 
+    previous questions and answers. All interactions are saved with search results for future reference.
     
-    Use chat_id with search_documentation to save conversation history."""
+    Available Actions:
+    - 'list': Display all your memory sessions with metadata (title, last updated, associated source)
+    - 'create': Initialize a new memory session (requires title, optional source_id for source-specific memories)
+    - 'get': Retrieve complete conversation history for a memory (requires memory_id)
+    - 'delete': Permanently remove a memory and all its messages (requires memory_id, cascade delete)
+    
+    Typical Workflow:
+    1. Create memory: manage_context_memory(action='create', title='My Research Topic')
+    2. Search with memory: search_context('query', memory_id='uuid-from-step-1')
+    3. View history: manage_context_memory(action='get', memory_id='uuid')
+    
+    Security: All memories are user-scoped via Row Level Security (RLS) - you can only access your own memories."""
     try:
         api_key = get_api_key()
         
         # Валидация параметров
         if action == 'create' and not title:
-            return "Error: 'title' is required for creating a chat"
+            return "Error: 'title' is required for creating a memory"
         
-        if action in ['get', 'delete'] and not chat_id:
-            return f"Error: 'chat_id' is required for action '{action}'"
+        if action in ['get', 'delete'] and not memory_id:
+            return f"Error: 'memory_id' is required for action '{action}'"
         
         # Формируем URL с параметрами
         url = f"{STRAYL_API_URL}/manage-documentation-chats?action={action}"
         
         if action == 'get' or action == 'delete':
-            url += f"&chat_id={chat_id}"
+            url += f"&chat_id={memory_id}"
         
         # Подготавливаем body для POST запроса (для create)
         body = None
@@ -588,13 +622,13 @@ async def manage_documentation_chats(
                 count = data.get("count", 0)
                 
                 if not chats:
-                    return "No chats found. Create a new chat with action='create'."
+                    return "No memories found. Create a new memory with action='create'."
                 
                 output = [
                     "=" * 80,
-                    "YOUR DOCUMENTATION CHATS",
+                    "YOUR CONTEXT MEMORIES",
                     "=" * 80,
-                    f"Total chats: {count}",
+                    f"Total memories: {count}",
                     "",
                 ]
                 
@@ -622,23 +656,23 @@ async def manage_documentation_chats(
                     output.append("")
                 
                 output.append("=" * 80)
-                output.append("\nTip: Use chat_id with search_documentation to continue conversation")
-                output.append("   Example: search_documentation('query', chat_id='uuid-here')")
+                output.append("\nTip: Use memory_id with search_context to continue conversation")
+                output.append("   Example: search_context('query', memory_id='uuid-here')")
                 
                 return "\n".join(output)
             
             elif action == 'create':
                 chat = data.get("chat", {})
-                chat_id_val = chat.get("id", "Unknown")
+                memory_id_val = chat.get("id", "Unknown")
                 title_val = chat.get("title", "Untitled")
                 
-                return f"""✅ Chat created successfully!
+                return f"""✅ Memory created successfully!
 
 Title: {title_val}
-Chat ID: {chat_id_val}
+Memory ID: {memory_id_val}
 
-Use this chat_id with search_documentation to save conversation history:
-  search_documentation('your query', chat_id='{chat_id_val}')
+Use this memory_id with search_context to save conversation history:
+  search_context('your query', memory_id='{memory_id_val}')
 """
             
             elif action == 'get':
@@ -650,14 +684,14 @@ Use this chat_id with search_documentation to save conversation history:
                 
                 output = [
                     "=" * 80,
-                    f"CHAT: {title_val}",
+                    f"MEMORY: {title_val}",
                     "=" * 80,
                     f"Messages: {count}",
                     "",
                 ]
                 
                 if not messages:
-                    output.append("No messages in this chat yet.")
+                    output.append("No context in this memory yet.")
                 else:
                     for i, msg in enumerate(messages, 1):
                         role = msg.get("role", "unknown")
@@ -681,7 +715,7 @@ Use this chat_id with search_documentation to save conversation history:
                 return "\n".join(output)
             
             elif action == 'delete':
-                return f"✅ Chat deleted successfully (ID: {chat_id})"
+                return f"✅ Memory deleted successfully (ID: {memory_id})"
             
             else:
                 return f"Unknown action: {action}"

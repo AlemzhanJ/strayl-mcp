@@ -6,7 +6,9 @@ MCP server for semantic and exact log search powered by Strayl.
 
 - **Semantic Search**: AI-powered search across your logs using vector embeddings
 - **Exact Text Search**: Traditional text matching with case-sensitive options
-- **Documentation Search**: AI-powered semantic search across indexed documentation
+- **Context Search**: AI-powered semantic search across indexed documentation and knowledge bases
+- **Context Management**: Create, manage and index custom context sources (docs, guides, wikis)
+- **Memory Sessions**: Maintain conversation history and context across multiple searches
 - **Time Filtering**: Search logs by time periods (5m, 1h, today, yesterday, 7d, etc.)
 - **Log Level Filtering**: Filter by log levels (info, warn, error, debug)
 - **Easy Integration**: Works with Claude Desktop, Cline, and other MCP clients
@@ -106,24 +108,66 @@ Exact text matching search across your logs.
 Search for exact text "timeout" in error logs from today
 ```
 
-### 3. search_documentation
+### 3. search_context
 
-Semantic (AI-powered) search across indexed documentation.
+Semantic (AI-powered) search across indexed context sources (documentation, knowledge bases, guides).
 
 **Parameters:**
 - `query` (required): Search query in natural language
-- `source_id` (optional): Specific documentation source ID to search within
-- `limit` (optional): Max results (default 5)
+- `memory_id` (optional): Memory session UUID to maintain conversation history
+- `source_id` (optional): Specific context source UUID to search within
 - `use_ai` (optional): Use AI to structure the answer (default True)
 
 **Example:**
 ```
-Search documentation for "how to authenticate users"
+Search context for "how to authenticate users"
 ```
 
-### 4. list_time_periods
+### 4. list_context_sources
 
-List all supported time period formats.
+List all available context sources (documentation, knowledge bases) you have access to.
+
+**Parameters:**
+- `include_public` (optional): Include public sources (default True)
+- `include_private` (optional): Include your private sources (default True)
+
+**Example:**
+```
+List all available context sources
+```
+
+### 5. index_context
+
+Index new context source (documentation, knowledge base, guides) from a URL.
+
+**Parameters:**
+- `url` (required): Full URL of the content to index
+- `is_public` (optional): Make this source public (default True)
+- `force` (optional): Force re-indexing (default False)
+
+**Example:**
+```
+Index documentation from https://docs.example.com
+```
+
+### 6. manage_context_memory
+
+Manage context memory sessions for maintaining conversation history.
+
+**Parameters:**
+- `action` (required): 'list', 'create', 'get', or 'delete'
+- `title` (optional): Memory title (required for 'create')
+- `memory_id` (optional): Memory UUID (required for 'get' and 'delete')
+- `source_id` (optional): Associate with specific source (for 'create')
+
+**Example:**
+```
+Create a new memory session for research
+```
+
+### 7. list_time_periods
+
+List all supported time period formats for log search.
 
 ## Time Period Formats
 
@@ -153,7 +197,11 @@ Simply ask Claude:
 
 > "Show me exact text 'null pointer' in error logs"
 
-> "Search documentation for how to implement user authentication"
+> "Search context for how to implement user authentication"
+
+> "Index the React documentation"
+
+> "Create a memory for my Python research"
 
 ### Development/Testing
 
